@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "EC2 para correr Docker y desplegar aplicaciones Laravel con SSM"
+
+Parameters:
+  KeyName:
+    Description: "Nombre del par de llaves SSH que ya existe en la región (ej. mi-keypair)"
+    Type: String
+
+Resources:
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  LaravelEC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t3.small"
+      KeyName: !Ref KeyName
+      ImageId: "ami-0f88e80871fd81e91"
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          yum update -y
+          dnf install -y docker
+          systemctl enable --now docker
+          usermod -aG docker ec2-user
+          echo "Instalación de Docker terminada" >> /var/log/user-data.log
+      Tags:
+        - Key: Name
+          Value: "DockerLaravelServer"
+
+  InstanceSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Permitir SSH (22), HTTP (80) y HTTPS (443)"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+Outputs:
+  InstancePublicIP:
+    Description: "IP pública de la instancia EC2"
+    Value: !GetAtt LaravelEC2Instance.PublicIp
+
